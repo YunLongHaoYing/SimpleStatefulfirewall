@@ -44,7 +44,6 @@ enum REQUEST_OP {
     FW_INIT,
     FW_ADDRULE,
     FW_DELRULE,
-    FW_READRULE,
     FW_DEFACT,
     FW_READDEFACT,
     FW_ADDNAT,
@@ -60,10 +59,6 @@ struct Request {
     union {
         struct Rule rule_add;
         __be32 rule_del_idx; // unsigned int
-        struct {
-            __be32 start_idx; // unsigned int
-            __be32 end_idx;   // unsigned int
-        } read_nat, read_mlog;
         __be32 def_act; // unsigned int
     } msg;
 };
@@ -138,7 +133,7 @@ int netlink_send(struct sock *nl_sk, int pid, int seq, char *data, int len)
         goto rt;
     }
 
-    nlh = nlmsg_put(skb, 0, seq, 0, NLMSG_SPACE(len) - NLMSG_HDRLEN, 0);
+    nlh = nlmsg_put(skb, pid, seq, 0, NLMSG_SPACE(len) - NLMSG_HDRLEN, 0);
     if (!nlh) {
         pr_err("Put msg to skb failed!\n");
         ret = -EPERM;
@@ -150,7 +145,7 @@ int netlink_send(struct sock *nl_sk, int pid, int seq, char *data, int len)
     // NETLINK_CB(skb).pid = 0;
     // NETLINK_CB(skb).dst_group = 0;
 
-    ret = netlink_unicast(nl_sk, skb, pid, MSG_DONTWAIT);
+    ret = nlmsg_unicast(nl_sk, skb, pid);
     PR_INFO("Data send to user %d.\n", pid);
 free:
     //nlmsg_free(skb);
@@ -167,9 +162,6 @@ int msg_hdr(int pid, int seq, char *data, int len)
     char *buff_heap = NULL, *buff = NULL;
     struct Response *resp = NULL;
     struct Request *req   = (struct Request *)data;
-
-    netlink_send(nl_sk_cmd, pid, seq, "hello world      ", 18);
-    netlink_send(nl_sk_log, pid, 0, "log", 6);
     
     /* Do things. */
     switch (req->opcode) {
@@ -184,7 +176,6 @@ int msg_hdr(int pid, int seq, char *data, int len)
     {
         struct Rule *rule = kvzalloc(sizeof(*rule), GFP_KERNEL);
         memcpy(rule, &req->msg.rule_add, sizeof(*rule));
-        rule->timeout = htonll(ktime_add_sec(ktime_get_real(), 3600 * 24));
         ruletable_add(rule_table, rule);
         buff     = "Add rule success!";
         data_len = strlen(buff);
@@ -194,6 +185,7 @@ int msg_hdr(int pid, int seq, char *data, int len)
             ret = -ENOMEM;
             goto out;
         }
+        PR_INFO("[ADDRULE] %x:%hd-%hd %x -> %x:%hd-%hd %x %d %d %d %lld", rule->saddr, rule->sport_min, rule->sport_max, rule->smask, rule->daddr, rule->dport_min, rule->dport_max, rule->dmask, rule->protocol, rule->action, rule->logging, ntohll(rule->timeout));
         ret = netlink_send(nl_sk_cmd, pid, seq, (char *)resp, sizeof(*resp) + data_len);
         break;
     }
@@ -211,113 +203,10 @@ int msg_hdr(int pid, int seq, char *data, int len)
             ret = -ENOMEM;
             goto out;
         }
+        PR_INFO("[DELRULE] Delete rule %d.\n", ntohl(req->msg.rule_del_idx));
         ret = netlink_send(nl_sk_cmd, pid, seq, (char *)resp, sizeof(*resp) + data_len);
         break;
     }
-    // case READRULE:
-    //     {buff_heap = xwall_ruletable_read(
-    //         rule_table, ntohl(req->msg.read_rule.start_idx),
-    //         ntohl(req->msg.read_rule.end_idx), &data_len);
-    //     if (!buff_heap) {
-    //         pr_err("[READRULE] Log buffer create failed.\n");
-    //         ret = -ENOMEM;
-    //         goto out;
-    //     }
-    //     resp = response_create(XWALL_TYPE_RULE, data_len, buff_heap);
-    //     if (!resp) {
-    //         pr_err("[READRULE] Response create failed.\n");
-    //         ret = -ENOMEM;
-    //         goto out;
-    //     }
-    //     ret = xwall_netlink_send(pid, (char *)resp, sizeof(*resp) + data_len);
-    //     break;}
-    // case XWALL_OP_SAVERULE:
-    //     {ret      = xwall_save_rule(rule_table);
-    //     buff     = ret ? "Save rules to " XWALL_RULE_FILE " success!"
-    //                    : "Save rules to " XWALL_RULE_FILE " fail!";
-    //     data_len = strlen(buff);
-    //     resp     = response_create(ret ? XWALL_TYPE_OK : XWALL_TYPE_ERROR,
-    //                                  data_len, buff);
-    //     if (!resp) {
-    //         pr_err("[SAVERULE] Response create failed.\n");
-    //         ret = -ENOMEM;
-    //         goto out;
-    //     }
-    //     ret = xwall_netlink_send(pid, (char *)resp, sizeof(*resp) + data_len);
-    //     break;}
-    // case XWALL_OP_READLOG:
-    //     {buff_heap =
-    //         xwall_logtable_read(log_table, ntohl(req->msg.read_log.start_idx),
-    //                             ntohl(req->msg.read_log.end_idx), &data_len);
-    //     if (!buff_heap) {
-    //         pr_err("[READLOG] Log buffer create failed.\n");
-    //         ret = -ENOMEM;
-    //         goto out;
-    //     }
-    //     resp = response_create(XWALL_TYPE_LOG, data_len, buff_heap);
-    //     if (!resp) {
-    //         pr_err("[READLOG] Response create failed.\n");
-    //         ret = -ENOMEM;
-    //         goto out;
-    //     }
-    //     ret = xwall_netlink_send(pid, (char *)resp, sizeof(*resp) + data_len);
-    //     break;}
-    // case XWALL_OP_CLRLOG:
-    //     {xwall_logtable_clear(log_table);
-    //     buff     = "Clear log table success!";
-    //     data_len = strlen(buff);
-    //     resp     = response_create(XWALL_TYPE_OK, data_len, buff);
-    //     if (!resp) {
-    //         pr_err("[CLRLOG] Response create failed.\n");
-    //         ret = -ENOMEM;
-    //         goto out;
-    //     }
-    //     ret = xwall_netlink_send(pid, (char *)resp, sizeof(*resp) + data_len);
-    //     break;}
-    // case XWALL_OP_READMLOG:
-    //     {buff_heap = xwall_mlogtable_read(
-    //         mlog_table, ntohl(req->msg.read_mlog.start_idx),
-    //         ntohl(req->msg.read_mlog.end_idx), &data_len);
-    //     if (!buff_heap) {
-    //         pr_err("[READNLOG] Manage log buffer create failed.\n");
-    //         ret = -ENOMEM;
-    //         goto out;
-    //     }
-    //     resp = response_create(XWALL_TYPE_MLOG, data_len, buff_heap);
-    //     if (!resp) {
-    //         pr_err("[READMLOG] Response create failed.\n");
-    //         ret = -ENOMEM;
-    //         goto out;
-    //     }
-    //     ret = xwall_netlink_send(pid, (char *)resp, sizeof(*resp) + data_len);
-    //     break;}
-    // case XWALL_OP_CLRMLOG:
-    //     {xwall_mlogtable_clear(mlog_table);
-    //     buff     = "Clear manage log table success!";
-    //     data_len = strlen(buff);
-    //     resp     = response_create(XWALL_TYPE_OK, data_len, buff);
-    //     if (!resp) {
-    //         pr_err("[CLRMLOG] Response create failed.\n");
-    //         ret = -ENOMEM;
-    //         goto out;
-    //     }
-    //     ret = xwall_netlink_send(pid, (char *)resp, sizeof(*resp) + data_len);
-    //     break;}
-    // case XWALL_OP_READCONN:
-    //     {buff_heap = xwall_hashtable_read(conn_table, &data_len);
-    //     if (!buff_heap) {
-    //         pr_err("[READCONN] Log buffer create failed.\n");
-    //         ret = -ENOMEM;
-    //         goto out;
-    //     }
-    //     resp = response_create(XWALL_TYPE_CONN, data_len, buff_heap);
-    //     if (!resp) {
-    //         pr_err("[READCONN] Response create failed.\n");
-    //         ret = -ENOMEM;
-    //         goto out;
-    //     }
-    //     ret = xwall_netlink_send(pid, (char *)resp, sizeof(*resp) + data_len);
-    //     break;}
     case FW_DEFACT:
     {
         default_action = (unsigned int)ntohl(req->msg.def_act);
@@ -331,6 +220,7 @@ int msg_hdr(int pid, int seq, char *data, int len)
             ret = -ENOMEM;
             goto out;
         }
+        PR_INFO("[DELRULE] Change default action to %s.\n", (default_action?"accept":"drop"));
         ret = netlink_send(nl_sk_cmd, pid, seq, (char *)resp, sizeof(*resp) + data_len);
         break;
     }
@@ -345,6 +235,7 @@ int msg_hdr(int pid, int seq, char *data, int len)
             ret = -ENOMEM;
             goto out;
         }
+        PR_INFO("[READDEFACT] Read default action.\n");
         ret = netlink_send(nl_sk_cmd, pid, seq, (char *)resp, sizeof(*resp) + data_len);
         break;
     }

@@ -4,7 +4,6 @@ import (
 	"backend/global"
 	"backend/initialize"
 	"backend/service/netlink"
-	"time"
 )
 
 const (
@@ -25,9 +24,11 @@ func main() {
 	defer global.Con.Cmd.Close()
 	defer global.Con.Log.Close()
 
-	netlink.InitMod()
+	if err := netlink.InitMod(); err != nil {
+		return
+	}
 
 	go netlink.ConRecvLog()
-	time.Sleep(300 * time.Second)
 
+	initialize.Run()
 }
