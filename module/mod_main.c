@@ -11,7 +11,7 @@
 
 static const struct nf_hook_ops nf_xwall_ops[] = {
     // {
-    //     .hook     = xwall_filter,
+    //     .hook     = fw_filter,
     //     .pf       = PF_INET,
     //     .hooknum  = NF_INET_PRE_ROUTING,
     //     .priority = NF_IP_PRI_LAST,
@@ -23,23 +23,23 @@ static const struct nf_hook_ops nf_xwall_ops[] = {
         .priority = NF_IP_PRI_FIRST,
     },
     // {
-    //     .hook     = xwall_filter,
+    //     .hook     = fw_filter,
     //     .pf       = PF_INET,
     //     .hooknum  = NF_INET_POST_ROUTING,
     //     .priority = NF_IP_PRI_FIRST,
     // },
-    // {
-    //     .hook     = xwall_nat_in,
-    //     .pf       = PF_INET,
-    //     .hooknum  = NF_INET_PRE_ROUTING,
-    //     .priority = NF_IP_PRI_NAT_DST,
-    // },
-    // {
-    //     .hook     = xwall_nat_out,
-    //     .pf       = PF_INET,
-    //     .hooknum  = NF_INET_POST_ROUTING,
-    //     .priority = NF_IP_PRI_NAT_SRC,
-    // },
+    {
+        .hook     = fw_nat_in,
+        .pf       = PF_INET,
+        .hooknum  = NF_INET_PRE_ROUTING,
+        .priority = NF_IP_PRI_NAT_DST,
+    },
+    {
+        .hook     = fw_nat_out,
+        .pf       = PF_INET,
+        .hooknum  = NF_INET_POST_ROUTING,
+        .priority = NF_IP_PRI_NAT_SRC,
+    },
 };
 
 
@@ -120,11 +120,6 @@ static void __exit firewall_exit(void)
     sock_release(nl_sk_log->sk_socket);
     sock_release(nl_sk_cmd->sk_socket);
     del_timer(&conn_timer);
-    if (conn_fp!=NULL)
-    {
-        filp_close(conn_fp, NULL);
-        conn_fp=NULL;
-    }
     PR_INFO("Firewall module exited.\n");
 }
 
