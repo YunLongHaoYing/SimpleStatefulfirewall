@@ -102,7 +102,13 @@ func (r *RuleService) DelRule(index uint32) error {
 func (r *RuleService) ModifyRule(rule *ModifyRuleReq) error {
 	rule.ID.ID = rule.MID
 	err := global.FW_DB.Transaction(func(db *gorm.DB) error {
-		if err := global.FW_DB.Table("rules").Where("id = ?", rule.ID.ID).Updates(&rule.Rule).Error; err != nil {
+		var r models.Rule
+		if err := global.FW_DB.Table("rules").Where("id = ?", rule.MID).First(&r).Error; err != nil {
+			global.FW_LOG.Error("数据库查询规则失败")
+			return errors.New("数据库查询规则失败")
+		}
+		rule.CreatedAt = r.CreatedAt
+		if err := global.FW_DB.Table("rules").Save(&rule.Rule).Error; err != nil {
 			global.FW_LOG.Error("数据库修改规则失败")
 			return errors.New("数据库修改规则失败")
 		}
