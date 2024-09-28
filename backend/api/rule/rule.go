@@ -67,10 +67,10 @@ func (r *RuleApi) ModifyRule(c *gin.Context) {
 		return
 	}
 	if err = RuleService.ModifyRule(&rule); err != nil {
-		global.AddMlog("删除过滤规则", 0, err.Error())
+		global.AddMlog("修改过滤规则", 0, err.Error())
 		response.BusinessFail(c, err)
 		return
 	}
-	global.AddMlog("删除过滤规则", 1, "")
+	global.AddMlog("修改过滤规则", 1, "")
 	response.Success(c, nil)
 }
